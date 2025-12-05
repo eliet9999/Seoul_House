@@ -19,7 +19,7 @@ st.set_page_config(page_title="서울시 부동산 투자 추천", page_icon="�
 st.title("🏠 AI 기반 서울시 부동산 투자 추천 서비스")
 st.markdown("""
 **3대 알고리즘(Prophet, Linear, RF)**을 통해 미래 가치를 예측합니다.
-**수익률(성장성)**과 **예상 지수(자산 가치)** 두 가지 관점으로 분석해 보세요.
+**변화율(성장성)**과 **예상 지수(자산 가치)** 두 가지 관점으로 분석해 보세요.
 """)
 st.divider()
 
@@ -35,7 +35,7 @@ st.sidebar.header("🔍 정렬 기준 (Ranking)")
 # [추가됨] 정렬 기준 선택 라디오 버튼
 sort_option = st.sidebar.radio(
     "어떤 기준으로 추천할까요?",
-    ("예상 수익률 높은 순 (투자용)", "미래 지수 높은 순 (자산가치용)")
+    ("예상 변화율 높은 순 (투자용)", "미래 지수 높은 순 (자산가치용)")
 )
 
 if uploaded_file is not None:
@@ -51,20 +51,20 @@ if uploaded_file is not None:
             # ----------------------------------------------------------------
             # [기능 추가] 사용자가 선택한 기준으로 데이터 정렬 다시 하기
             # ----------------------------------------------------------------
-            if sort_option == "예상 수익률 높은 순 (투자용)":
-                # 수익률 내림차순 (기존 방식)
-                results_df = results_df.sort_values(by='예상 수익률(%)', ascending=False)
-                rank_title = "🔥 급상승 예상 지역 (수익률 Top 5)"
+            if sort_option == "예상 변화율 높은 순 (투자용)":
+                # 변화율 내림차순 (기존 방식)
+                results_df = results_df.sort_values(by='예상 변화율(%)', ascending=False)
+                rank_title = "🔥 급상승 예상 지역 (변화율 Top 5)"
                 color_map = 'Reds' # 붉은색 계열 (상승 이미지)
             else:
                 # 미래 지수(Prophet 예상) 내림차순 (사용자 요청 방식)
                 # 'Prophet' 컬럼이 없다면 utils에서 키 이름을 확인해야 함.
                 # 현재 utils는 '현재 지수'를 기준으로 계산하므로, 
-                # (1 + 수익률/100) * 현재지수 = 미래지수 역산 혹은 utils 수정 필요.
+                # (1 + 변화율/100) * 현재지수 = 미래지수 역산 혹은 utils 수정 필요.
                 # 편의상 현재 코드 로직상 미래 가격이 명시적으로 컬럼에 없을 수 있으므로 계산해서 정렬
                 
-                # 안전하게 '현재 지수' * (1 + 수익률/100) 값으로 정렬 (예상 지수)
-                results_df['예상 미래 지수'] = results_df['현재 지수'] * (1 + results_df['예상 수익률(%)'] / 100)
+                # 안전하게 '현재 지수' * (1 + 변화율/100) 값으로 정렬 (예상 지수)
+                results_df['예상 미래 지수'] = results_df['현재 지수'] * (1 + results_df['예상 변화율(%)'] / 100)
                 results_df = results_df.sort_values(by='예상 미래 지수', ascending=False)
                 rank_title = "💎 미래 최고 부촌 예상 (지수 Top 5)"
                 color_map = 'Blues' # 파란색 계열 (신뢰/우량 이미지)
@@ -85,14 +85,14 @@ if uploaded_file is not None:
             st.subheader(f"🏆 {rank_title}")
             
             # 화면에 보여줄 컬럼 정리
-            display_cols = ['자치구', '현재 지수', '예상 수익률(%)', '추천 모델', 'Prophet 오차', 'Linear 오차', 'RandomForest 오차']
+            display_cols = ['자치구', '현재 지수', '예상 변화율(%)', '추천 모델', 'Prophet 오차', 'Linear 오차', 'RandomForest 오차']
             
             # Top 5만 자르기
             top5 = results_df.head(5)
             
             # 스타일링 출력
             st.dataframe(
-                top5[display_cols].style.background_gradient(subset=['예상 수익률(%)'], cmap=color_map),
+                top5[display_cols].style.background_gradient(subset=['예상 변화율(%)'], cmap=color_map),
                 use_container_width=True
             )
             
@@ -184,3 +184,4 @@ if uploaded_file is not None:
         st.error("데이터 형식이 올바르지 않습니다.")
 else:
     st.info("👈 엑셀 파일을 업로드해주세요.")
+
