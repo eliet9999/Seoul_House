@@ -143,7 +143,7 @@ def predict_district_prices(df, months=12):
         results.append({
             '자치구': district,
             '현재 지수': round(current_price, 2),
-            '예상 수익률(%)': round(return_p, 2),
+            '예상 변화율(%)': round(return_p, 2),
             '추천 모델': best_model,
             'Prophet 오차': f"{avg_error_p:.2f}%",
             'Linear 오차': f"{avg_error_l:.2f}%",
@@ -161,6 +161,7 @@ def predict_district_prices(df, months=12):
     progress_bar.empty()
     status_text.empty()
     
-    results_df = pd.DataFrame(results).sort_values(by='예상 수익률(%)', ascending=False)
+    results_df = pd.DataFrame(results).sort_values(by='예상 변화율(%)', ascending=False)
     
     return results_df, forecasts
+
