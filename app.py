@@ -2,11 +2,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import io # [추가] 엑셀 파일을 메모리에서 다루기 위한 도구
+import io
 from utils.data_loader import load_excel_data
 from utils.predictor import predict_district_prices
 
-# 엑셀 다운로드용 함수 (메모리에 파일을 저장함)
+# 엑셀 다운로드 함수
 def convert_df_to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -18,15 +18,25 @@ st.set_page_config(page_title="서울시 부동산 투자 추천", page_icon="�
 
 st.title("🏠 AI 기반 서울시 부동산 투자 추천 서비스")
 st.markdown("""
-**3대 알고리즘(Prophet, Linear, RF)**을 비교 분석합니다.
-각 모델의 **평균 오차율(MAPE)**을 계산하여 가장 신뢰할 수 있는 예측을 추천합니다.
-*(오차율이 낮을수록 정확한 모델입니다)*
+**3대 알고리즘(Prophet, Linear, RF)**을 통해 미래 가치를 예측합니다.
+**수익률(성장성)**과 **예상 지수(자산 가치)** 두 가지 관점으로 분석해 보세요.
 """)
 st.divider()
 
+# -------------------------------------------------------------------------
+# [사이드바] 설정
+# -------------------------------------------------------------------------
 st.sidebar.header("⚙️ 설정 및 입력")
 uploaded_file = st.sidebar.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
 months = st.sidebar.slider("미래 예측 기간 (개월)", min_value=1, max_value=60, value=12)
+
+st.sidebar.divider()
+st.sidebar.header("🔍 정렬 기준 (Ranking)")
+# [추가됨] 정렬 기준 선택 라디오 버튼
+sort_option = st.sidebar.radio(
+    "어떤 기준으로 추천할까요?",
+    ("예상 수익률 높은 순 (투자용)", "미래 지수 높은 순 (자산가치용)")
+)
 
 if uploaded_file is not None:
     df = load_excel_data(uploaded_file)
@@ -34,50 +44,84 @@ if uploaded_file is not None:
     if df is not None:
         st.success("✅ 데이터 로드 완료!")
         
-        if st.button("🚀 정밀 분석 및 검증 시작"):
-            with st.spinner('최근 1년 데이터로 오차율 테스트 중...'):
+        if st.button("🚀 AI 분석 시작"):
+            with st.spinner('3년치 교차 검증 및 미래 예측 분석 중... (시간이 조금 걸립니다)'):
                 results_df, forecasts = predict_district_prices(df, months=months)
             
             # ----------------------------------------------------------------
-            # [기능 추가] 엑셀 다운로드 버튼
+            # [기능 추가] 사용자가 선택한 기준으로 데이터 정렬 다시 하기
             # ----------------------------------------------------------------
-            excel_data = convert_df_to_excel(results_df)
+            if sort_option == "예상 수익률 높은 순 (투자용)":
+                # 수익률 내림차순 (기존 방식)
+                results_df = results_df.sort_values(by='예상 수익률(%)', ascending=False)
+                rank_title = "🔥 급상승 예상 지역 (수익률 Top 5)"
+                color_map = 'Reds' # 붉은색 계열 (상승 이미지)
+            else:
+                # 미래 지수(Prophet 예상) 내림차순 (사용자 요청 방식)
+                # 'Prophet' 컬럼이 없다면 utils에서 키 이름을 확인해야 함.
+                # 현재 utils는 '현재 지수'를 기준으로 계산하므로, 
+                # (1 + 수익률/100) * 현재지수 = 미래지수 역산 혹은 utils 수정 필요.
+                # 편의상 현재 코드 로직상 미래 가격이 명시적으로 컬럼에 없을 수 있으므로 계산해서 정렬
+                
+                # 안전하게 '현재 지수' * (1 + 수익률/100) 값으로 정렬 (예상 지수)
+                results_df['예상 미래 지수'] = results_df['현재 지수'] * (1 + results_df['예상 수익률(%)'] / 100)
+                results_df = results_df.sort_values(by='예상 미래 지수', ascending=False)
+                rank_title = "💎 미래 최고 부촌 예상 (지수 Top 5)"
+                color_map = 'Blues' # 파란색 계열 (신뢰/우량 이미지)
             
+            # 엑셀 다운로드 버튼
+            excel_data = convert_df_to_excel(results_df)
             st.sidebar.divider()
-            st.sidebar.header("💾 결과 저장")
             st.sidebar.download_button(
                 label="📥 분석 결과 엑셀 다운로드",
                 data=excel_data,
                 file_name='seoul_housing_analysis.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            # ----------------------------------------------------------------
 
-            st.subheader(f"🏆 투자 유망 Top 5 지역 (수익률 순)")
+            # ----------------------------------------------------------------
+            # 메인 화면 표시
+            # ----------------------------------------------------------------
+            st.subheader(f"🏆 {rank_title}")
             
+            # 화면에 보여줄 컬럼 정리
             display_cols = ['자치구', '현재 지수', '예상 수익률(%)', '추천 모델', 'Prophet 오차', 'Linear 오차', 'RandomForest 오차']
-            top5 = results_df[display_cols].head(5)
             
+            # Top 5만 자르기
+            top5 = results_df.head(5)
+            
+            # 스타일링 출력
             st.dataframe(
-                top5.style.background_gradient(subset=['예상 수익률(%)'], cmap='summer'),
+                top5[display_cols].style.background_gradient(subset=['예상 수익률(%)'], cmap=color_map),
                 use_container_width=True
             )
             
-            with st.expander("📋 전체 지역 오차율 및 상세 데이터 보기"):
+            with st.expander("📋 전체 순위 보기"):
                 st.dataframe(results_df[display_cols])
 
             st.divider()
 
-            st.subheader("📈 알고리즘 비교 및 오차 검증")
+            # ----------------------------------------------------------------
+            # 상세 그래프
+            # ----------------------------------------------------------------
+            st.subheader("📈 상세 분석 그래프")
             
             top_district = top5.iloc[0]['자치구']
             selected_district = st.selectbox("자치구 선택:", results_df['자치구'], index=0)
             
             row = results_df[results_df['자치구'] == selected_district].iloc[0]
             best_model_name = row['추천 모델']
-            best_model_error = row[f'{best_model_name} 오차']
+            # 키 에러 방지용 이름 매핑
+            if 'RandomForest' in best_model_name:
+                err_key = 'RandomForest 오차'
+            elif 'Linear' in best_model_name:
+                err_key = 'Linear 오차'
+            else:
+                err_key = 'Prophet 오차'
+                
+            best_model_error = row[err_key]
             
-            st.info(f"💡 **{selected_district}**의 경우, **[{best_model_name}]** 모델의 오차율이 **{best_model_error}**로 가장 낮아 신뢰도가 높습니다.")
+            st.info(f"💡 **{selected_district}**의 분석 결과: **[{best_model_name}]** 모델이 가장 정확합니다. (오차율: {best_model_error})")
             
             data = forecasts[selected_district]
             history = data['history']
@@ -102,6 +146,7 @@ if uploaded_file is not None:
                 line=dict(color='#00CC96', width=3)
             ))
             
+            # Prophet 오차범위
             fig.add_trace(go.Scatter(
                 x=prophet['ds'], y=prophet['yhat_upper'],
                 mode='lines', line=dict(width=0), showlegend=False
