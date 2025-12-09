@@ -85,7 +85,7 @@ if uploaded_file is not None:
             st.subheader(f"🏆 {rank_title}")
             
             # 화면에 보여줄 컬럼 정리
-            display_cols = ['자치구', '현재 지수', '예상 변화율(%)', '추천 모델', 'Prophet 오차', 'Linear 오차', 'RandomForest 오차']
+            display_cols = ['자치구', '현재 지수', 'Prophet 예상 변화율(%)', '추천 모델', 'Prophet 오차', 'Linear 오차', 'RandomForest 오차']
             
             # Top 5만 자르기
             top5 = results_df.head(5)
@@ -184,4 +184,5 @@ if uploaded_file is not None:
         st.error("데이터 형식이 올바르지 않습니다.")
 else:
     st.info("👈 엑셀 파일을 업로드해주세요.")
+
 
