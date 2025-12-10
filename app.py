@@ -18,12 +18,12 @@ st.set_page_config(page_title="서울시 부동산 투자 추천", page_icon="�
 st.title("🏠 AI 기반 서울시 부동산 투자 추천 서비스")
 st.markdown("""
 **3대 알고리즘(Linear, RF, Prophet)**의 예측 결과를 시나리오별로 비교합니다.
-분석 후 **순위 결정 모델**을 변경하여 모델별 자치구 순위 변동을 확인하세요.
+각 모델의 **예상 변화율**과 **오차율**을 모두 확인하고, 가장 신뢰할 수 있는 모델을 참고하세요.
 """)
 st.divider()
 
 # -------------------------------------------------------------------------
-# [사이드바] 기본 설정
+# [사이드바] 설정
 # -------------------------------------------------------------------------
 st.sidebar.header("⚙️ 설정 및 입력")
 uploaded_file = st.sidebar.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
@@ -31,9 +31,10 @@ months = st.sidebar.slider("미래 예측 기간 (개월)", min_value=1, max_val
 
 st.sidebar.divider()
 st.sidebar.header("🎯 분석 목표 (View)")
+# [용어 변경] 수익률 -> 변화율 (상승 폭)
 view_option = st.sidebar.radio(
     "무엇을 중점으로 볼까요?",
-    ("예상 수익률 높은 순 (투자 가치)", "예상 미래 지수 높은 순 (자산 가치)")
+    ("예상 변화율 높은 순 (상승 폭)", "예상 미래 지수 높은 순 (자산 가치)")
 )
 
 # 세션 초기화
@@ -79,29 +80,30 @@ if uploaded_file is not None:
                 )
 
             # ----------------------------------------------------------------
-            # [로직] 선택한 모델에 따라 정렬 컬럼 결정
+            # [로직] 컬럼 이름 변경 반영 (수익률 -> 변화율)
             # ----------------------------------------------------------------
             if "AI 통합 추천" in ranking_model:
-                target_return_col = '최적 수익률' # 이 컬럼이 표에 있어야 함!
+                target_return_col = '최적 변화율' # 변경됨
                 display_msg = "오차율이 가장 낮은 모델을 자동으로 반영한 순위입니다."
             elif "Linear" in ranking_model:
-                target_return_col = 'Linear 수익률(%)'
+                target_return_col = 'Linear 변화율(%)' # 변경됨
                 display_msg = "상승/하락 추세선을 기준으로 한 순위입니다."
             elif "Prophet" in ranking_model:
-                target_return_col = 'Prophet 수익률(%)'
+                target_return_col = 'Prophet 변화율(%)' # 변경됨
                 display_msg = "계절성과 트렌드를 반영한 Prophet 모델 기준 순위입니다."
             elif "Random Forest" in ranking_model:
-                target_return_col = 'RF 수익률(%)'
+                target_return_col = 'RF 변화율(%)' # 변경됨
                 display_msg = "최근 패턴을 보수적으로 반영한 Random Forest 기준 순위입니다."
 
             # ----------------------------------------------------------------
             # [로직] 정렬 수행
             # ----------------------------------------------------------------
-            if "투자 가치" in view_option:
+            if "예상 변화율" in view_option: # 투자 가치(상승 폭)
                 results_df = results_df.sort_values(by=target_return_col, ascending=False)
-                rank_title = f"{ranking_model.split('(')[0]} 기준 Top 5 (수익률)"
+                rank_title = f"{ranking_model.split('(')[0]} 기준 Top 5 (상승 폭)"
                 color_map = 'Reds'
             else:
+                # 자산 가치
                 results_df['시나리오별 미래 지수'] = results_df['현재 지수'] * (1 + results_df[target_return_col] / 100)
                 results_df = results_df.sort_values(by='시나리오별 미래 지수', ascending=False)
                 rank_title = f"{ranking_model.split('(')[0]} 기준 Top 5 (지수)"
@@ -115,30 +117,27 @@ if uploaded_file is not None:
             # ----------------------------------------------------------------
             st.subheader(f"📊 {rank_title}")
             
-            # [수정됨] 기본 표시 컬럼
+            # [핵심 수정] 표시 컬럼 이름 일괄 변경
             display_cols = [
                 '자치구', '현재 지수',
-                'Linear 수익률(%)', 'Linear 오차',
-                'RF 수익률(%)', 'RF 오차',
-                'Prophet 수익률(%)', 'Prophet 오차',
+                'Linear 변화율(%)', 'Linear 오차',
+                'RF 변화율(%)', 'RF 오차',
+                'Prophet 변화율(%)', 'Prophet 오차',
                 '추천 모델'
             ]
             
-            # [핵심 수정] 정렬 기준이 되는 컬럼(예: 최적 수익률)이 리스트에 없으면 강제로 추가
-            # 이렇게 해야 '없는 컬럼을 색칠해라'라는 에러가 안 남
+            # 정렬 기준 컬럼 강제 추가 (없을 경우 대비)
             if target_return_col not in display_cols:
-                # '현재 지수' 바로 뒤에 삽입해서 잘 보이게 함
                 display_cols.insert(2, target_return_col)
 
             # 미래 지수 보기 모드면 컬럼 추가
             if "자산 가치" in view_option:
-                # 중복 추가 방지
                 if '시나리오별 미래 지수' not in display_cols:
                     display_cols.insert(2, '시나리오별 미래 지수')
 
             top5 = results_df.head(5)
             
-            # 데이터프레임 표시 (이제 에러 안 남)
+            # 스타일링: 바뀐 이름으로 하이라이트 적용
             st.dataframe(
                 top5[display_cols].style.background_gradient(subset=[target_return_col], cmap=color_map),
                 use_container_width=True
@@ -164,24 +163,24 @@ if uploaded_file is not None:
             
             row = results_df[results_df['자치구'] == selected_district].iloc[0]
             
-            # 선택된 모델의 수익률 표시
+            # 선택된 모델의 변화율 표시
             if "AI" in ranking_model:
-                # AI 통합 추천일 때는 '최적 수익률' 값을 보여줌
                 model_name = row['추천 모델']
-                val = row['최적 수익률']
+                val = row['최적 변화율']
             elif "Linear" in ranking_model:
                 model_name = "Linear Regression"
-                val = row['Linear 수익률(%)']
+                val = row['Linear 변화율(%)']
             elif "Prophet" in ranking_model:
                 model_name = "Prophet"
-                val = row['Prophet 수익률(%)']
+                val = row['Prophet 변화율(%)']
             else:
                 model_name = "Random Forest"
-                val = row['RF 수익률(%)']
+                val = row['RF 변화율(%)']
 
+            # [문구 수정] 수익률 -> 변화율
             st.markdown(f"""
             ### 📌 {selected_district} 분석 요약
-            * **[{ranking_model.split('(')[0]}]** 기준 예상 수익률: **{val:.2f}%**
+            * **[{ranking_model.split('(')[0]}]** 기준 예상 변화율: **{val:.2f}%**
             * (참고: 이 지역 최적 모델은 **{row['추천 모델']}** 입니다.)
             """)
             
