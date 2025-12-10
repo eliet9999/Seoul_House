@@ -17,31 +17,23 @@ st.set_page_config(page_title="서울시 부동산 투자 추천", page_icon="�
 
 st.title("🏠 AI 기반 서울시 부동산 투자 추천 서비스")
 st.markdown("""
-**3대 알고리즘(Linear, RF, Prophet)**의 시나리오별 미래 가치를 분석합니다.
-좌측 사이드바에서 **정렬 기준**을 변경하여 모델별 예상 순위를 비교해 보세요.
+**3대 알고리즘(Linear, RF, Prophet)**의 예측 결과를 시나리오별로 비교합니다.
+분석 후 **순위 결정 모델**을 변경하여 모델별 자치구 순위 변동을 확인하세요.
 """)
 st.divider()
 
 # -------------------------------------------------------------------------
-# [사이드바] 설정
+# [사이드바] 기본 설정 (큰 틀)
 # -------------------------------------------------------------------------
 st.sidebar.header("⚙️ 설정 및 입력")
 uploaded_file = st.sidebar.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
 months = st.sidebar.slider("미래 예측 기간 (개월)", min_value=1, max_value=60, value=12)
 
 st.sidebar.divider()
-st.sidebar.header("🔍 정렬 기준 (Ranking)")
-
-# [핵심 수정] 정렬 옵션을 세분화하여 추가
-sort_option = st.sidebar.radio(
-    "어떤 기준으로 순위를 볼까요?",
-    (
-        "🔥 통합 추천: 급상승 예상 (수익률 순)",
-        "💎 통합 추천: 미래 부촌 (지수 순)",
-        "📏 Linear 기준: 미래 부촌 (지수 순)",
-        "🌲 RF 기준: 미래 부촌 (지수 순)",
-        "🔮 Prophet 기준: 미래 부촌 (지수 순)"
-    )
+st.sidebar.header("🎯 분석 목표 (View)")
+view_option = st.sidebar.radio(
+    "무엇을 중점으로 볼까요?",
+    ("예상 수익률 높은 순 (투자 가치)", "예상 미래 지수 높은 순 (자산 가치)")
 )
 
 # 세션 초기화
@@ -55,55 +47,76 @@ if uploaded_file is not None:
     if df is not None:
         st.success("✅ 데이터 로드 완료!")
         
-        if st.button("🚀 AI 상세 분석 시작"):
-            with st.spinner('3대 모델 전수 조사 및 시나리오 분석 중...'):
+        # 분석 버튼
+        if st.button("🚀 AI 분석 시작"):
+            with st.spinner('3대 모델 전수 조사 및 교차 검증 중...'):
                 results_df, forecasts = predict_district_prices(df, months=months)
                 st.session_state['results_df'] = results_df
                 st.session_state['forecasts'] = forecasts
                 st.session_state['data_loaded'] = True
 
+        # 분석 완료 후 화면 표시
         if st.session_state['data_loaded'] and st.session_state['results_df'] is not None:
-            results_df = st.session_state['results_df'].copy() # 원본 보존을 위해 copy
+            results_df = st.session_state['results_df'].copy()
             forecasts = st.session_state['forecasts']
             
+            st.divider()
+            
             # ----------------------------------------------------------------
-            # [로직 수정] 선택한 기준에 따라 정렬 및 미래 지수 계산
+            # [핵심 기능] 순위 결정 모델 선택 (메인 화면)
             # ----------------------------------------------------------------
-            if "🔥 통합 추천" in sort_option:
-                # 최적 모델 수익률 기준
-                results_df = results_df.sort_values(by='최적 수익률', ascending=False)
-                rank_title = "🔥 급상승 예상 지역 (통합 Top 5)"
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("### 📉 순위 기준 모델")
+                ranking_model = st.selectbox(
+                    "어떤 모델을 기준으로 등수를 매길까요?",
+                    (
+                        "🏆 AI 통합 추천 (최적 모델)",
+                        "📏 Linear Regression (선형회귀)",
+                        "🔮 Prophet (프로펫)",
+                        "🌲 Random Forest (랜덤포레스트)"
+                    )
+                )
+
+            # ----------------------------------------------------------------
+            # [로직] 선택한 모델에 따라 정렬 컬럼 결정
+            # ----------------------------------------------------------------
+            if "AI 통합 추천" in ranking_model:
+                target_return_col = '최적 수익률' # 내부용 컬럼
+                display_msg = "오차율이 가장 낮은 모델을 자동으로 반영한 순위입니다."
+            elif "Linear" in ranking_model:
+                target_return_col = 'Linear 수익률(%)'
+                display_msg = "상승/하락 추세선을 기준으로 한 순위입니다."
+            elif "Prophet" in ranking_model:
+                target_return_col = 'Prophet 수익률(%)'
+                display_msg = "계절성과 트렌드를 반영한 Prophet 모델 기준 순위입니다."
+            elif "Random Forest" in ranking_model:
+                target_return_col = 'RF 수익률(%)'
+                display_msg = "최근 패턴을 보수적으로 반영한 Random Forest 기준 순위입니다."
+
+            # ----------------------------------------------------------------
+            # [로직] 투자 가치 vs 자산 가치 정렬
+            # ----------------------------------------------------------------
+            if "투자 가치" in view_option:
+                # 수익률 기준 정렬
+                results_df = results_df.sort_values(by=target_return_col, ascending=False)
+                rank_title = f"{ranking_model.split('(')[0]} 기준 Top 5 (수익률)"
                 color_map = 'Reds'
-                highlight_col = '최적 수익률' # 수익률 강조
-                
             else:
-                # 자산 가치(지수) 기준 정렬 로직
-                rank_title = f"🏆 {sort_option.split(':')[0]} Top 5"
-                color_map = 'Blues'
-                
-                if "💎 통합 추천" in sort_option:
-                    target_return_col = '최적 수익률'
-                elif "Linear" in sort_option:
-                    target_return_col = 'Linear 수익률(%)'
-                elif "RF" in sort_option:
-                    target_return_col = 'RF 수익률(%)'
-                elif "Prophet" in sort_option:
-                    target_return_col = 'Prophet 수익률(%)'
-                
-                # 선택된 모델의 수익률을 기반으로 '예상 미래 지수' 계산
+                # 미래 지수 기준 정렬
                 results_df['시나리오별 미래 지수'] = results_df['현재 지수'] * (1 + results_df[target_return_col] / 100)
                 results_df = results_df.sort_values(by='시나리오별 미래 지수', ascending=False)
-                highlight_col = target_return_col
+                rank_title = f"{ranking_model.split('(')[0]} 기준 Top 5 (지수)"
+                color_map = 'Blues'
+            
+            with col2:
+                st.info(f"💡 **{display_msg}**")
 
             # ----------------------------------------------------------------
+            # 결과 표 출력
+            # ----------------------------------------------------------------
+            st.subheader(f"📊 {rank_title}")
             
-            excel_data = convert_df_to_excel(results_df)
-            st.sidebar.divider()
-            st.sidebar.download_button("📥 현재 결과 엑셀 다운로드", excel_data, 'seoul_housing_analysis.xlsx')
-
-            st.subheader(rank_title)
-            
-            # 표시할 컬럼 정의
             display_cols = [
                 '자치구', '현재 지수',
                 'Linear 수익률(%)', 'Linear 오차',
@@ -112,38 +125,58 @@ if uploaded_file is not None:
                 '추천 모델'
             ]
             
-            # 미래 지수 모드일 경우, 계산된 미래 지수도 보여주면 좋음
-            if "통합 추천" not in sort_option or "미래 부촌" in sort_option:
+            # 미래 지수 보기 모드면 컬럼 추가
+            if "자산 가치" in view_option:
                 display_cols.insert(2, '시나리오별 미래 지수')
 
             top5 = results_df.head(5)
             
-            # 스타일링: 선택된 기준 모델의 수익률 컬럼을 강조
+            # 선택한 모델의 수익률 컬럼 하이라이트
             st.dataframe(
-                top5[display_cols].style.background_gradient(subset=[highlight_col], cmap=color_map),
+                top5[display_cols].style.background_gradient(subset=[target_return_col], cmap=color_map),
                 use_container_width=True
             )
             
-            with st.expander("📋 전체 자치구 순위 보기"):
+            with st.expander("📋 전체 자치구 순위 보기 (엑셀 다운로드)"):
                 st.dataframe(results_df[display_cols])
+                excel_data = convert_df_to_excel(results_df)
+                st.download_button("📥 전체 결과 엑셀 다운로드", excel_data, 'seoul_housing_analysis.xlsx')
 
             st.divider()
 
-            st.subheader("📈 상세 분석 그래프")
+            # ----------------------------------------------------------------
+            # 상세 그래프 (위에서 정렬된 순서 그대로 반영)
+            # ----------------------------------------------------------------
+            st.subheader("📈 상세 시각화 및 모델 비교")
             
-            # [중요] 정렬된 순서대로 Selectbox 목록이 나옴 -> 1등부터 차례로 보기 편함
-            selected_district = st.selectbox("자치구 선택 (위 순위대로 정렬됨):", results_df['자치구'].unique(), index=0)
+            # 여기가 중요! results_df가 위에서 이미 정렬되었기 때문에, 이 목록 상자도 1등~25등 순서로 나옴
+            selected_district = st.selectbox(
+                "확인할 자치구를 선택하세요 (위 순위대로 정렬됨):", 
+                results_df['자치구'].unique(), 
+                index=0
+            )
             
             row = results_df[results_df['자치구'] == selected_district].iloc[0]
-            best_model_name = row['추천 모델']
             
-            if 'RandomForest' in best_model_name: err_key = 'RF 오차'
-            elif 'Linear' in best_model_name: err_key = 'Linear 오차'
-            else: err_key = 'Prophet 오차'
-            
-            best_model_error = row[err_key]
-            
-            st.info(f"💡 **{selected_district}**의 분석 결과: 오차율 **{best_model_error}**인 **[{best_model_name}]** 모델이 가장 신뢰도가 높습니다.")
+            # 선택된 모델의 수익률과 오차 보여주기
+            if "AI" in ranking_model:
+                model_name = row['추천 모델']
+                val = row['최적 수익률']
+            elif "Linear" in ranking_model:
+                model_name = "Linear Regression"
+                val = row['Linear 수익률(%)']
+            elif "Prophet" in ranking_model:
+                model_name = "Prophet"
+                val = row['Prophet 수익률(%)']
+            else:
+                model_name = "Random Forest"
+                val = row['RF 수익률(%)']
+
+            st.markdown(f"""
+            ### 📌 {selected_district} 분석 요약
+            * 선택하신 **[{model_name}]** 기준 예상 수익률은 **{val:.2f}%** 입니다.
+            * (참고: 이 지역에서 가장 오차가 적은 모델은 **{row['추천 모델']}** 입니다.)
+            """)
             
             data = forecasts[selected_district]
             history, prophet, linear, rf = data['history'], data['prophet'], data['linear'], data['rf']
