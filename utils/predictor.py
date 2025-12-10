@@ -10,7 +10,7 @@ import traceback
 
 def predict_district_prices(df, months=12):
     """
-    3대 알고리즘의 예측 결과(수익률)와 오차율을 모두 계산하여 반환합니다.
+    3대 알고리즘의 예측 결과(변화율)와 오차율을 모두 계산하여 반환합니다.
     """
     results = []
     forecasts = {}
@@ -32,6 +32,7 @@ def predict_district_prices(df, months=12):
         # ---------------------------------------------------------
         errors_p, errors_l, errors_rf = [], [], []
         
+        # 데이터 부족 처리
         if len(district_df) < 12:
             print(f"⚠️ [데이터 부족] {district}")
             continue
@@ -83,7 +84,7 @@ def predict_district_prices(df, months=12):
             avg_error_p, avg_error_l, avg_error_rf = 99.9, 99.9, 99.9
 
         # ---------------------------------------------------------
-        # [Step 2] 최종 미래 예측 (모든 모델 수행)
+        # [Step 2] 최종 미래 예측
         # ---------------------------------------------------------
         try:
             district_df['date_ordinal'] = district_df['date'].map(pd.Timestamp.toordinal)
@@ -110,54 +111,52 @@ def predict_district_prices(df, months=12):
             fc_rf = m_rf.predict(future_dates_ordinal)
             
             # ---------------------------------------------------------
-            # [Step 3] 결과 정리 (모든 값 저장)
+            # [Step 3] 결과 정리 (이름 변경: 수익률 -> 변화율)
             # ---------------------------------------------------------
             current_price = district_df['price'].iloc[-1]
             
-            # 1. 미래 가격 추출
             future_p = fc_prophet['yhat'].iloc[-1]
             future_l = fc_linear[-1]
             future_rf = fc_rf[-1]
             
-            # 2. 수익률 각각 계산
-            return_p = (future_p - current_price) / current_price * 100
-            return_l = (future_l - current_price) / current_price * 100
-            return_rf = (future_rf - current_price) / current_price * 100
+            # 변화율 계산
+            change_p = (future_p - current_price) / current_price * 100
+            change_l = (future_l - current_price) / current_price * 100
+            change_rf = (future_rf - current_price) / current_price * 100
             
-            # 3. 최적 모델 판별
+            # 최적 모델 판별
             best_error = min(avg_error_p, avg_error_l, avg_error_rf)
             
             if best_error == avg_error_p:
                 best_model = "Prophet"
-                best_return = return_p
+                best_change = change_p
             elif best_error == avg_error_l:
                 best_model = "Linear"
-                best_return = return_l
+                best_change = change_l
             else:
                 best_model = "RandomForest"
-                best_return = return_rf
+                best_change = change_rf
 
-            # 4. 결과 저장 (모든 정보 포함)
+            # [핵심 변경] 키(Key) 이름을 모두 '변화율'로 변경
             results.append({
                 '자치구': district,
                 '현재 지수': round(current_price, 2),
                 
-                # 정렬을 위한 내부 점수 (화면엔 안 보여줘도 됨)
-                '최적 수익률': best_return, 
+                # 내부 정렬용
+                '최적 변화율': best_change, 
                 
                 # Linear
-                'Linear 수익률(%)': round(return_l, 2),
+                'Linear 변화율(%)': round(change_l, 2),
                 'Linear 오차': f"{avg_error_l:.2f}%",
                 
-                # Random Forest
-                'RF 수익률(%)': round(return_rf, 2),
+                # RF
+                'RF 변화율(%)': round(change_rf, 2),
                 'RF 오차': f"{avg_error_rf:.2f}%",
                 
                 # Prophet
-                'Prophet 수익률(%)': round(return_p, 2),
+                'Prophet 변화율(%)': round(change_p, 2),
                 'Prophet 오차': f"{avg_error_p:.2f}%",
                 
-                # 결론
                 '추천 모델': best_model
             })
             
@@ -176,6 +175,6 @@ def predict_district_prices(df, months=12):
 
     progress_bar.empty()
     status_text.empty()
-    # 정렬은 '최적 모델의 수익률' 기준으로 함 (그래야 Top 5가 의미 있음)
-    results_df = pd.DataFrame(results).sort_values(by='최적 수익률', ascending=False)
+    # 정렬 기준도 변경된 이름으로 수정
+    results_df = pd.DataFrame(results).sort_values(by='최적 변화율', ascending=False)
     return results_df, forecasts
