@@ -9,6 +9,9 @@ import streamlit as st
 import traceback
 
 def predict_district_prices(df, months=12):
+    """
+    3대 알고리즘의 예측 결과(수익률)와 오차율을 모두 계산하여 반환합니다.
+    """
     results = []
     forecasts = {}
     
@@ -20,17 +23,17 @@ def predict_district_prices(df, months=12):
     
     for i, district in enumerate(districts):
         progress_bar.progress((i + 1) / total)
-        status_text.text(f"⏳ 분석 중...: {district} ({i+1}/{total})")
+        status_text.text(f"⏳ 3대 모델 전수 분석 중...: {district} ({i+1}/{total})")
         
         district_df = df[df['district'] == district].copy()
         
         # ---------------------------------------------------------
-        # [Step 1] 시계열 교차 검증
+        # [Step 1] 시계열 교차 검증 (오차율 계산)
         # ---------------------------------------------------------
         errors_p, errors_l, errors_rf = [], [], []
         
         if len(district_df) < 12:
-            print(f"⚠️ [데이터 부족] {district}: 건너뜁니다.")
+            print(f"⚠️ [데이터 부족] {district}")
             continue
 
         if len(district_df) > 60: cv_years = 3
@@ -51,6 +54,7 @@ def predict_district_prices(df, months=12):
                 X_test = test_df['date'].map(pd.Timestamp.toordinal).values.reshape(-1, 1)
                 y_test = test_df['price'].values
                 
+                # 1. Prophet
                 try:
                     p_train = train_df.rename(columns={'date': 'ds', 'price': 'y'})
                     m_p = Prophet(daily_seasonality=False, weekly_seasonality=False).fit(p_train)
@@ -58,12 +62,14 @@ def predict_district_prices(df, months=12):
                     errors_p.append(mean_absolute_percentage_error(y_test, p_pred) * 100)
                 except: errors_p.append(100.0)
 
+                # 2. Linear
                 try:
                     m_l = LinearRegression().fit(X_train, y_train)
                     l_pred = m_l.predict(X_test)
                     errors_l.append(mean_absolute_percentage_error(y_test, l_pred) * 100)
                 except: errors_l.append(100.0)
 
+                # 3. RF
                 try:
                     m_rf = RandomForestRegressor(n_estimators=100, random_state=42).fit(X_train, y_train)
                     rf_pred = m_rf.predict(X_test)
@@ -77,7 +83,7 @@ def predict_district_prices(df, months=12):
             avg_error_p, avg_error_l, avg_error_rf = 99.9, 99.9, 99.9
 
         # ---------------------------------------------------------
-        # [Step 2] 최종 미래 예측
+        # [Step 2] 최종 미래 예측 (모든 모델 수행)
         # ---------------------------------------------------------
         try:
             district_df['date_ordinal'] = district_df['date'].map(pd.Timestamp.toordinal)
@@ -93,45 +99,66 @@ def predict_district_prices(df, months=12):
             future_dates = fc_prophet['ds']
             future_dates_ordinal = future_dates.map(pd.Timestamp.toordinal).values.reshape(-1, 1)
             
-            # Linear & RF
+            # Linear
             m_linear = LinearRegression()
             m_linear.fit(X_all, y_all)
             fc_linear = m_linear.predict(future_dates_ordinal)
             
+            # RF
             m_rf = RandomForestRegressor(n_estimators=100, random_state=42)
             m_rf.fit(X_all, y_all)
             fc_rf = m_rf.predict(future_dates_ordinal)
             
             # ---------------------------------------------------------
-            # [Step 3] 결과 정리
+            # [Step 3] 결과 정리 (모든 값 저장)
             # ---------------------------------------------------------
             current_price = district_df['price'].iloc[-1]
+            
+            # 1. 미래 가격 추출
             future_p = fc_prophet['yhat'].iloc[-1]
             future_l = fc_linear[-1]
             future_rf = fc_rf[-1]
             
+            # 2. 수익률 각각 계산
+            return_p = (future_p - current_price) / current_price * 100
+            return_l = (future_l - current_price) / current_price * 100
+            return_rf = (future_rf - current_price) / current_price * 100
+            
+            # 3. 최적 모델 판별
             best_error = min(avg_error_p, avg_error_l, avg_error_rf)
             
             if best_error == avg_error_p:
                 best_model = "Prophet"
-                final_future_price = future_p
+                best_return = return_p
             elif best_error == avg_error_l:
                 best_model = "Linear"
-                final_future_price = future_l
+                best_return = return_l
             else:
                 best_model = "RandomForest"
-                final_future_price = future_rf
+                best_return = return_rf
 
-            final_return = (final_future_price - current_price) / current_price * 100
-
+            # 4. 결과 저장 (모든 정보 포함)
             results.append({
                 '자치구': district,
                 '현재 지수': round(current_price, 2),
-                'Prophet 예상 수익률(%)': round(final_return, 2), # [중요] 이름 변경됨!
-                '추천 모델': best_model,
-                'Prophet 오차': f"{avg_error_p:.2f}%",
+                
+                # 정렬을 위한 내부 점수 (화면엔 안 보여줘도 됨)
+                '최적 수익률': best_return, 
+                
+                # Linear
+                'Linear 수익률(%)': round(return_l, 2),
                 'Linear 오차': f"{avg_error_l:.2f}%",
-                'RandomForest 오차': f"{avg_error_rf:.2f}%"
+                
+                # Random Forest
+                'RF 수익률(%)': round(return_rf, 2),
+                'RF 오차': f"{avg_error_rf:.2f}%",
+                
+                # Prophet
+                'Prophet 수익률(%)': round(return_p, 2),
+                'Prophet 오차': f"{avg_error_p:.2f}%",
+                
+                # 결론
+                '추천 모델': best_model
             })
             
             forecasts[district] = {
@@ -143,12 +170,12 @@ def predict_district_prices(df, months=12):
             }
             
         except Exception as e:
-            print(f"❌ [오류] {district}: {e}")
+            print(f"❌ {district} 에러: {e}")
             print(traceback.format_exc())
             continue
 
     progress_bar.empty()
     status_text.empty()
-    # 정렬 기준도 바뀐 이름으로 수정
-    results_df = pd.DataFrame(results).sort_values(by='Prophet 예상 수익률(%)', ascending=False)
+    # 정렬은 '최적 모델의 수익률' 기준으로 함 (그래야 Top 5가 의미 있음)
+    results_df = pd.DataFrame(results).sort_values(by='최적 수익률', ascending=False)
     return results_df, forecasts
