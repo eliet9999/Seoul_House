@@ -92,7 +92,7 @@ if uploaded_file is not None:
             
             # 스타일링 출력
             st.dataframe(
-                top5[display_cols].style.background_gradient(subset=['예상 변화율(%)'], cmap=color_map),
+                top5[display_cols].style.background_gradient(subset=['Prophet 예상 변화율(%)'], cmap=color_map),
                 use_container_width=True
             )
             
@@ -184,5 +184,6 @@ if uploaded_file is not None:
         st.error("데이터 형식이 올바르지 않습니다.")
 else:
     st.info("👈 엑셀 파일을 업로드해주세요.")
+
 
 
